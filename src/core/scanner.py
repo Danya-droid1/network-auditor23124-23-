@@ -1,17 +1,15 @@
 # -*- coding: utf-8 -*-
 """
 Модуль TCP-сканирования сетевых портов.
-Реализует класс PortScanner для проверки открытых портов
-и сопоставления их с базой известных сервисов.
+Реализует класс PortScanner для проверки открытых портов,
+определения имён хостов и типа операционной системы.
 Автор: Голуб Д.Н., группа о.ИЗДтс 23.1/Б4-23
 """
 
 # Импорт модуля socket для работы с сетевыми соединениями
 import socket
-
-# Импорт типов для типизации аргументов и возвращаемых значений
-from typing import List, Dict
-
+# Импорт типов для типизации аргументов
+from typing import List, Dict, Tuple
 # Импорт модуля datetime для работы с датой и временем
 from datetime import datetime
 
@@ -19,7 +17,8 @@ from datetime import datetime
 class PortScanner:
     """
     Класс для сканирования сетевых портов.
-    Реализует TCP-сканирование, которое проверяет, открыт ли порт на целевом хосте.
+    Реализует TCP-сканирование, определение имён хостов
+    и определение типа ОС по открытым портам.
     """
 
     def __init__(self, timeout: int = 1):
@@ -28,9 +27,7 @@ class PortScanner:
 
         :param timeout: Таймаут соединения в секундах (по умолчанию 1 сек)
         """
-        # Сохраняем таймаут как атрибут класса
         self.timeout = timeout
-        # Флаг состояния сканирования (используется для отмены)
         self.is_scanning = False
 
     def scan_port(self, ip: str, port: int) -> bool:
@@ -43,83 +40,122 @@ class PortScanner:
         :return: True если порт открыт, False иначе
         """
         try:
-            # Создаём TCP-сокет (AF_INET - IPv4, SOCK_STREAM - TCP)
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            # Устанавливаем таймаут соединения
             sock.settimeout(self.timeout)
-            # Пытаемся подключиться к порту
-            # connect_ex возвращает 0, если соединение успешно
             result = sock.connect_ex((ip, port))
-            # Закрываем сокет после проверки
             sock.close()
-            # Возвращаем True, если порт открыт (result == 0)
             return result == 0
         except Exception as e:
-            # При ошибке выводим сообщение и возвращаем False
             print(f"Ошибка при сканировании {ip}:{port} - {e}")
             return False
 
     def get_service_name(self, port: int) -> str:
         """
         Получение названия сервиса по номеру порта.
-        Использует словарь известных портов и их сервисов.
 
         :param port: Номер порта
         :return: Название сервиса или 'Unknown-<порт>'
         """
-        # Словарь соответствия портов и сервисов
         services = {
-            21: 'FTP',      # Протокол передачи файлов
-            22: 'SSH',      # Защищённый удалённый доступ
-            23: 'Telnet',   # Нешифрованный удалённый доступ
-            25: 'SMTP',     # Простой протокол передачи почты
-            53: 'DNS',      # Система доменных имён
-            80: 'HTTP',     # Протокол передачи гипертекста
-            110: 'POP3',    # Протокол получения почты
-            143: 'IMAP',    # Протокол доступа к почте
-            443: 'HTTPS',   # Защищённый протокол передачи гипертекста
-            445: 'SMB',     # Протокол сетевого доступа к файлам
-            3306: 'MySQL',  # СУБД MySQL
-            3389: 'RDP',    # Протокол удалённого рабочего стола
-            5432: 'PostgreSQL',  # СУБД PostgreSQL
-            8080: 'HTTP-Alt'     # Альтернативный HTTP
+            21: 'FTP', 22: 'SSH', 23: 'Telnet', 25: 'SMTP',
+            53: 'DNS', 80: 'HTTP', 110: 'POP3', 143: 'IMAP',
+            443: 'HTTPS', 445: 'SMB', 3306: 'MySQL',
+            3389: 'RDP', 5432: 'PostgreSQL', 8080: 'HTTP-Alt'
         }
-        # Возвращаем название сервиса или заглушку для неизвестного порта
         return services.get(port, f'Unknown-{port}')
 
-    def scan_host(self, ip: str, ports: List[int]) -> List[Dict]:
+    def get_hostname(self, ip: str) -> str:
         """
-        Сканирование одного хоста по списку портов.
+        Получение имени хоста по IP-адресу через обратный DNS-запрос.
+        Если имя не удаётся определить, возвращает 'Неизвестно'.
 
-        :param ip: IP-адрес целевого хоста
+        :param ip: IP-адрес хоста
+        :return: Имя хоста или 'Неизвестно'
+        """
+        try:
+            # Выполняем обратный DNS-запрос
+            hostname, _, _ = socket.gethostbyaddr(ip)
+            return hostname
+        except (socket.herror, socket.gaierror, OSError):
+            # Если имя не найдено или произошла ошибка
+            return "Неизвестно"
+
+    def get_os_type(self, open_ports: List[int]) -> str:
+        """
+        Определение типа операционной системы по открытым портам.
+        Эвристический метод, основанный на типичных сервисах ОС.
+
+        :param open_ports: Список открытых портов на хосте
+        :return: Тип ОС: 'Windows', 'Linux' или 'Неизвестно'
+        """
+        # RDP (3389) или SMB (445) характерны для Windows
+        if 3389 in open_ports or 445 in open_ports:
+            return "Windows"
+        # SSH (22) без RDP/SMB обычно указывает на Linux/Unix
+        if 22 in open_ports:
+            return "Linux"
+        # HTTP/HTTPS может быть на любой ОС
+        if 80 in open_ports or 443 in open_ports:
+            return "Неизвестно"
+        return "Неизвестно"
+
+    def scan_host(self, ip: str, ports: List[int]) -> Dict:
+        """
+        Полное сканирование одного хоста.
+        Возвращает информацию об открытых портах, имени хоста и типе ОС.
+
+        :param ip: IP-адрес хоста
         :param ports: Список портов для сканирования
-        :return: Список словарей с результатами сканирования
+        :return: Словарь с результатами сканирования хоста
         """
-        # Инициализируем пустой список результатов
-        results = []
+        open_ports = []
 
-        # Перебираем все порты из списка
+        # Сканируем все порты
         for port in ports:
-            # Проверяем, открыт ли порт
-            is_open = self.scan_port(ip, port)
+            if self.scan_port(ip, port):
+                open_ports.append(port)
 
-            # Если порт открыт, добавляем информацию о нём в результаты
+        # Получаем имя хоста
+        hostname = self.get_hostname(ip)
+
+        # Определяем тип ОС
+        os_type = self.get_os_type(open_ports)
+
+        # Формируем результат
+        result = {
+            'ip': ip,
+            'hostname': hostname,
+            'os_type': os_type,
+            'open_ports': open_ports,
+            'services': [self.get_service_name(p) for p in open_ports],
+            'detected_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+        return result
+
+    def scan_host_ports(self, ip: str, ports: List[int]) -> List[Dict]:
+        """
+        Сканирование одного хоста с возвратом списка открытых портов.
+        Используется для отображения в таблице результатов.
+
+        :param ip: IP-адрес хоста
+        :param ports: Список портов для сканирования
+        :return: Список словарей с информацией об открытых портах
+        """
+        results = []
+        for port in ports:
+            is_open = self.scan_port(ip, port)
             if is_open:
                 result = {
-                    'ip': ip,                                          # IP-адрес хоста
-                    'port': port,                                      # Номер порта
-                    'service': self.get_service_name(port),            # Название сервиса
-                    'is_open': True,                                   # Статус порта
-                    'detected_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S")  # Время обнаружения
+                    'ip': ip,
+                    'port': port,
+                    'service': self.get_service_name(port),
+                    'is_open': True,
+                    'detected_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 }
                 results.append(result)
-
-        # Возвращаем список найденных открытых портов
         return results
 
     def stop_scanning(self):
-        """
-        Остановка процесса сканирования.
-        Устанавливает флаг is_scanning в False.
-        """
+        """Остановка процесса сканирования."""
         self.is_scanning = False
