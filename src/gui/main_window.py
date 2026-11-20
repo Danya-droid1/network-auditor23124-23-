@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Main application window with sidebar navigation.
 
