@@ -3,7 +3,7 @@
 Главное окно приложения с боковым меню.
 Реализует навигацию между разделами с учётом роли пользователя.
 Интегрирует реальное сканирование сети через ScanWorker.
-Все диалоги используют русские кнопки через обёртку dialogs.py.
+Обновлено: подключён сигнал profile_updated для обновления UI при изменении профиля.
 Автор: Голуб Д.Н., группа о.ИЗДтс 23.1/Б4-23
 """
 
@@ -72,10 +72,17 @@ class MainWindow(QMainWindow):
         sidebar_layout = QVBoxLayout(sidebar)
         sidebar_layout.setContentsMargins(10, 20, 10, 20)
 
-        user_label = QLabel(f"👤 {self.user_data.get('username')}")
-        user_label.setStyleSheet(
-            "font-weight: bold; margin-bottom: 20px; font-size: 14px; color: #4a9eff; background: transparent;")
-        sidebar_layout.addWidget(user_label)
+        # Метка с именем пользователя
+        self.user_label = QLabel(f"👤 {self.user_data.get('username')}")
+        self.user_label.setStyleSheet(
+            "font-weight: bold; margin-bottom: 5px; font-size: 14px; color: #4a9eff; background: transparent;")
+        sidebar_layout.addWidget(self.user_label)
+
+        # Метка с ФИО
+        self.fullname_label = QLabel(self.user_data.get('full_name', ''))
+        self.fullname_label.setStyleSheet(
+            "font-size: 12px; color: #a0a0b0; background: transparent; margin-bottom: 20px;")
+        sidebar_layout.addWidget(self.fullname_label)
 
         self.btn_dashboard = self.create_nav_button("📊 Дашборд")
         self.btn_scan = self.create_nav_button("🔍 Новое сканирование")
@@ -153,8 +160,25 @@ class MainWindow(QMainWindow):
         self.dashboard.btn_manage_assets.clicked.connect(lambda: self.content_area.setCurrentIndex(2))
 
         # Устанавливаем контекст для окна результатов
-        # (нужно, чтобы экспортированные отчёты попадали в историю)
         self.results.set_context(self.user_data.get('username', 'unknown'), self.reports)
+
+        # === Подключаем сигнал изменения профиля ===
+        self.profile.profile_updated.connect(self.on_profile_updated)
+
+    def on_profile_updated(self, new_user_data: dict):
+        """
+        Обработчик сигнала об изменении данных профиля.
+        Обновляет метки в боковом меню и заголовок окна.
+
+        :param new_user_data: Обновлённые данные пользователя
+        """
+        self.user_data = new_user_data
+
+        # Обновляем метку ФИО в боковом меню
+        self.fullname_label.setText(new_user_data.get('full_name', ''))
+
+        # Обновляем заголовок окна
+        self.setWindowTitle(f"Network Auditor — {new_user_data.get('role', 'User').capitalize()}")
 
     def create_nav_button(self, text: str) -> QPushButton:
         """
@@ -229,7 +253,6 @@ class MainWindow(QMainWindow):
         self.dashboard.update_statistics(results)
         self.content_area.setCurrentIndex(1)
 
-        # Используем русскую кнопку "ОК"
         info(
             self,
             "Сканирование завершено",
@@ -253,7 +276,6 @@ class MainWindow(QMainWindow):
         """
         Выход из системы с русскими кнопками подтверждения.
         """
-        # Используем обёртку с русскими "Да"/"Нет"
         if question(self, "Выход", "Вы уверены, что хотите выйти?"):
             from src.gui.login_window import LoginWindow
             self.login_window = LoginWindow()
