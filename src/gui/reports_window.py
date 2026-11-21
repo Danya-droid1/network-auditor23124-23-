@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-Окно генерации отчётов.
-Содержит историю отчётов и кнопки создания новых отчётов в форматах DOCX/XLSX.
-Реализовано открытие выбранного отчёта через системную команду os.startfile.
+Окно истории отчётов.
+Отображает список сгенерированных отчётов и позволяет их открыть.
+Генерация отчётов происходит из окна "Результаты" после сканирования.
 Автор: Голуб Д.Н., группа о.ИЗДтс 23.1/Б4-23
 """
 
@@ -15,7 +15,7 @@ import sys
 # Импорт компонентов PySide6
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                                QTableWidget, QTableWidgetItem, QPushButton,
-                               QFileDialog)
+                               QHeaderView)
 from PySide6.QtCore import Qt
 
 # Импорт обёртки диалогов с русскими кнопками
@@ -24,9 +24,8 @@ from src.utils.dialogs import info, warning, critical
 
 class ReportsWindow(QWidget):
     """
-    Окно истории и генерации отчётов.
-    Позволяет создавать новые отчёты в форматах DOCX и XLSX
-    и открывать выбранные файлы в соответствующих приложениях.
+    Окно истории отчётов.
+    Показывает список сгенерированных отчётов и позволяет открыть выбранный.
     """
 
     def __init__(self):
@@ -47,7 +46,8 @@ class ReportsWindow(QWidget):
         layout.addWidget(header)
 
         # Информационная метка
-        self.info_label = QLabel("Отчётов пока нет — выполните сканирование и экспортируйте результаты")
+        self.info_label = QLabel(
+            "Отчётов пока нет — выполните сканирование и экспортируйте результаты из вкладки 'Результаты'")
         self.info_label.setStyleSheet("font-size: 13px; color: #a0a0b0; background: transparent;")
         layout.addWidget(self.info_label)
 
@@ -59,46 +59,29 @@ class ReportsWindow(QWidget):
         ])
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setAlternatingRowColors(True)
+
+        # Растягиваем последнюю колонку
+        header_view = self.table.horizontalHeader()
+        header_view.setSectionResizeMode(4, QHeaderView.Stretch)
+
         layout.addWidget(self.table)
 
-        # Кнопки генерации отчётов
+        # Оставляем только кнопку открытия выбранного отчёта
         btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
 
-        self.generate_docx_btn = QPushButton("📄 Создать DOCX-отчёт")
-        self.generate_docx_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #2980b9; color: white; 
-                padding: 10px; border-radius: 4px; font-weight: bold;
-            }
-            QPushButton:hover { background-color: #3498db; }
-        """)
-        self.generate_docx_btn.clicked.connect(self.generate_docx)
-
-        self.generate_xlsx_btn = QPushButton("📊 Создать XLSX-отчёт")
-        self.generate_xlsx_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #27ae60; color: white; 
-                padding: 10px; border-radius: 4px; font-weight: bold;
-            }
-            QPushButton:hover { background-color: #2ecc71; }
-        """)
-        self.generate_xlsx_btn.clicked.connect(self.generate_xlsx)
-
-        # Кнопка открытия выбранного файла — теперь с обработчиком
-        self.open_btn = QPushButton("📂 Открыть выбранный")
+        self.open_btn = QPushButton("📂 Открыть выбранный отчёт")
         self.open_btn.setStyleSheet("""
             QPushButton {
                 background-color: #9b59b6; color: white; 
-                padding: 10px; border-radius: 4px; font-weight: bold;
+                padding: 10px 16px; border: none;
+                border-radius: 4px; font-weight: bold;
             }
             QPushButton:hover { background-color: #af7ac5; }
         """)
         self.open_btn.clicked.connect(self.open_selected)
-
-        btn_layout.addWidget(self.generate_docx_btn)
-        btn_layout.addWidget(self.generate_xlsx_btn)
         btn_layout.addWidget(self.open_btn)
-        btn_layout.addStretch()
+
         layout.addLayout(btn_layout)
 
         self.setLayout(layout)
@@ -177,20 +160,3 @@ class ReportsWindow(QWidget):
         except Exception as e:
             critical(self, "Ошибка открытия",
                      f"Не удалось открыть файл:\n{str(e)}")
-
-    def generate_docx(self):
-        """
-        Ручная генерация DOCX-отчёта из текущей истории.
-        В реальной системе данные берутся из БД.
-        """
-        warning(self, "Функция в разработке",
-                "Генерация отчётов доступна из окна 'Результаты' "
-                "после выполнения сканирования.")
-
-    def generate_xlsx(self):
-        """
-        Ручная генерация XLSX-отчёта из текущей истории.
-        """
-        warning(self, "Функция в разработке",
-                "Генерация отчётов доступна из окна 'Результаты' "
-                "после выполнения сканирования.")

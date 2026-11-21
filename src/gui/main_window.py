@@ -2,8 +2,7 @@
 """
 Главное окно приложения с боковым меню.
 Реализует навигацию между разделами с учётом роли пользователя.
-Интегрирует реальное сканирование сети через ScanWorker.
-Обновлено: подключён сигнал profile_updated для обновления UI при изменении профиля.
+Интегрирует реальное сканирование сети через ScanWorker с поддержкой CIDR.
 Автор: Голуб Д.Н., группа о.ИЗДтс 23.1/Б4-23
 """
 
@@ -169,23 +168,14 @@ class MainWindow(QMainWindow):
         """
         Обработчик сигнала об изменении данных профиля.
         Обновляет метки в боковом меню и заголовок окна.
-
-        :param new_user_data: Обновлённые данные пользователя
         """
         self.user_data = new_user_data
-
-        # Обновляем метку ФИО в боковом меню
         self.fullname_label.setText(new_user_data.get('full_name', ''))
-
-        # Обновляем заголовок окна
         self.setWindowTitle(f"Network Auditor — {new_user_data.get('role', 'User').capitalize()}")
 
     def create_nav_button(self, text: str) -> QPushButton:
         """
         Создание стилизованной кнопки навигации в тёмной теме.
-
-        :param text: Текст кнопки
-        :return: Настроенный QPushButton
         """
         btn = QPushButton(text)
         btn.setStyleSheet("""
@@ -219,14 +209,12 @@ class MainWindow(QMainWindow):
         params = dialog.get_scan_params()
         ip_range = params['ip_range']
         timeout = params['timeout']
+        ports = params['ports']
 
-        port_profile = params['port_profile']
-        if "Стандартные" in port_profile:
-            ports = [21, 22, 23, 80, 443, 445, 3389]
-        elif "Все" in port_profile:
-            ports = list(range(1, 1025))
-        else:
-            ports = [21, 22, 23, 80, 443, 445, 3389]
+        # Проверка, что порты не пустые
+        if not ports:
+            warning(self, "Ошибка", "Не удалось определить список портов для сканирования.")
+            return
 
         self.progress_window = ScanProgressWindow()
         self.progress_window.show()
@@ -241,8 +229,6 @@ class MainWindow(QMainWindow):
     def on_scan_finished(self, results: list):
         """
         Обработчик завершения сканирования.
-
-        :param results: Список результатов сканирования
         """
         if hasattr(self, 'progress_window'):
             self.progress_window.close()
@@ -264,8 +250,6 @@ class MainWindow(QMainWindow):
     def on_scan_error(self, error_msg: str):
         """
         Обработчик ошибки сканирования.
-
-        :param error_msg: Сообщение об ошибке
         """
         if hasattr(self, 'progress_window'):
             self.progress_window.close()
