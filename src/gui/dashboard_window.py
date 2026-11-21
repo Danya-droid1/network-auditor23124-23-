@@ -2,6 +2,7 @@
 """
 Окно дашборда со статистикой и быстрыми действиями.
 Отображает реальную статистику на основе последних сканирований.
+Исправлено отображение текста в карточках через objectName и прозрачный фон меток.
 Автор: Голуб Д.Н., группа о.ИЗДтс 23.1/Б4-23
 """
 
@@ -39,19 +40,19 @@ class DashboardWindow(QWidget):
 
         # Заголовок
         header = QLabel("Панель управления")
-        header.setStyleSheet("font-size: 24px; font-weight: bold; color: #e6e6f0;")
+        header.setStyleSheet("font-size: 24px; font-weight: bold; color: #e6e6f0; background: transparent;")
         layout.addWidget(header)
 
         # Приветствие
         welcome = QLabel(f"Добро пожаловать, {self.user_data.get('full_name', 'Пользователь')}!")
-        welcome.setStyleSheet("font-size: 16px; color: #a0a0b0; margin-bottom: 20px;")
+        welcome.setStyleSheet("font-size: 16px; color: #a0a0b0; background: transparent;")
         layout.addWidget(welcome)
 
         # === Сетка статистических карточек ===
         stats_grid = QGridLayout()
         stats_grid.setSpacing(15)
 
-        # Создаём карточки как атрибуты для последующего обновления
+        # Создаём карточки
         self.card_scans = self.create_stat_card("Всего сканирований", str(self.total_scans), "#3498db")
         self.card_ports = self.create_stat_card("Открытых портов", str(self.open_ports), "#e74c3c")
         self.card_risk = self.create_stat_card("Высокий риск", str(self.high_risk), "#e67e22")
@@ -68,7 +69,7 @@ class DashboardWindow(QWidget):
 
         # === Блок быстрых действий ===
         quick_actions = QLabel("Быстрые действия")
-        quick_actions.setStyleSheet("font-size: 18px; font-weight: bold; color: #e6e6f0;")
+        quick_actions.setStyleSheet("font-size: 18px; font-weight: bold; color: #e6e6f0; background: transparent;")
         layout.addWidget(quick_actions)
 
         actions_layout = QHBoxLayout()
@@ -112,39 +113,65 @@ class DashboardWindow(QWidget):
     def create_stat_card(self, title: str, value: str, color: str) -> QFrame:
         """
         Создание цветной карточки со статистикой.
+        Использует objectName для точечного стилизования меток,
+        чтобы стили QFrame не перекрывали цвет текста QLabel.
 
         :param title: Название показателя
         :param value: Числовое значение
         :param color: Цвет фона карточки
         :return: Настроенный QFrame
         """
+        # Создаём контейнер карточки
         card = QFrame()
+        # Задаём objectName для изоляции стилей — стили применяются только к самой карточке
+        card.setObjectName("statCard")
         card.setStyleSheet(f"""
-            QFrame {{
+            QFrame#statCard {{
                 background-color: {color};
                 border-radius: 10px;
-                padding: 20px;
             }}
         """)
-        card.setFixedHeight(120)
+        card.setFixedHeight(140)
 
+        # Создаём layout для карточки
         card_layout = QVBoxLayout(card)
-        card_layout.setAlignment(Qt.AlignCenter)
+        card_layout.setContentsMargins(15, 15, 15, 15)
+        # Растяжение сверху и снизу для центрирования по вертикали
+        card_layout.addStretch()
 
-        # Большое число
+        # Большое число (значение)
         value_label = QLabel(value)
-        value_label.setStyleSheet("font-size: 32px; font-weight: bold; color: white;")
+        value_label.setObjectName("statValue")
+        value_label.setStyleSheet("""
+            QLabel#statValue {
+                font-size: 36px;
+                font-weight: bold;
+                color: white;
+                background: transparent;
+                border: none;
+            }
+        """)
         value_label.setAlignment(Qt.AlignCenter)
 
-        # Подпись
+        # Подпись (название)
         title_label = QLabel(title)
-        title_label.setStyleSheet("font-size: 14px; color: white;")
+        title_label.setObjectName("statTitle")
+        title_label.setStyleSheet("""
+            QLabel#statTitle {
+                font-size: 14px;
+                color: white;
+                background: transparent;
+                border: none;
+            }
+        """)
         title_label.setAlignment(Qt.AlignCenter)
 
+        # Добавляем метки в layout карточки
         card_layout.addWidget(value_label)
         card_layout.addWidget(title_label)
+        card_layout.addStretch()
 
-        # Сохраняем ссылки на виджеты для обновления
+        # Сохраняем ссылки на виджеты для последующего обновления
         card.value_label = value_label
         card.title_label = title_label
 
@@ -175,3 +202,9 @@ class DashboardWindow(QWidget):
         self.card_ports.value_label.setText(str(self.open_ports))
         self.card_risk.value_label.setText(str(self.high_risk))
         self.card_assets.value_label.setText(str(self.total_assets))
+
+        # Принудительно перерисовываем карточки
+        self.card_scans.value_label.repaint()
+        self.card_ports.value_label.repaint()
+        self.card_risk.value_label.repaint()
+        self.card_assets.value_label.repaint()

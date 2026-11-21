@@ -9,8 +9,11 @@
 # Импорт компонентов PySide6
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                                QLineEdit, QPushButton, QCheckBox, QSpinBox,
-                               QFileDialog, QMessageBox)
+                               QFileDialog)
 from PySide6.QtCore import Qt
+
+# Импорт обёртки диалогов с русскими кнопками
+from src.utils.dialogs import info
 
 
 class SettingsWindow(QWidget):
@@ -29,40 +32,38 @@ class SettingsWindow(QWidget):
         layout = QVBoxLayout()
         layout.setContentsMargins(20, 20, 20, 20)
 
-        # Заголовок окна
         header = QLabel("Настройки системы")
-        header.setStyleSheet("font-size: 20px; font-weight: bold;")
+        header.setStyleSheet("font-size: 20px; font-weight: bold; color: #e6e6f0; background: transparent;")
         layout.addWidget(header)
 
-        # === Пункт 1: Таймаут сканирования ===
+        # Пункт 1: Таймаут сканирования
         layout.addWidget(QLabel("1. Таймаут сканирования (секунды):"))
         self.timeout_spin = QSpinBox()
         self.timeout_spin.setRange(1, 10)
         self.timeout_spin.setValue(1)
         layout.addWidget(self.timeout_spin)
 
-        # === Пункт 2: Автоматическое сканирование ===
+        # Пункт 2: Автоматическое сканирование
         self.auto_scan_check = QCheckBox("2. Включить автоматическое сканирование по расписанию")
         layout.addWidget(self.auto_scan_check)
 
-        # === Пункт 3: Периодичность автосканирования ===
+        # Пункт 3: Периодичность автосканирования
         layout.addWidget(QLabel("3. Периодичность автосканирования (дни):"))
         self.period_spin = QSpinBox()
         self.period_spin.setRange(1, 30)
         self.period_spin.setValue(7)
         layout.addWidget(self.period_spin)
 
-        # === Пункт 4: Уведомления ===
+        # Пункт 4: Уведомления
         self.notifications_check = QCheckBox("4. Включить уведомления о критических уязвимостях")
         self.notifications_check.setChecked(True)
         layout.addWidget(self.notifications_check)
 
-        # === Пункт 5: Путь для сохранения отчётов ===
+        # Пункт 5: Путь для сохранения отчётов
         path_layout = QHBoxLayout()
         path_layout.addWidget(QLabel("5. Путь для сохранения отчётов:"))
         self.path_input = QLineEdit("C:/NetworkAuditor/Reports")
         path_layout.addWidget(self.path_input)
-        # Кнопка выбора папки через диалог
         self.browse_btn = QPushButton("Обзор...")
         self.browse_btn.clicked.connect(self.browse_path)
         path_layout.addWidget(self.browse_btn)
@@ -70,9 +71,14 @@ class SettingsWindow(QWidget):
 
         layout.addStretch()
 
-        # Кнопка сохранения настроек
-        self.save_btn = QPushButton("Сохранить настройки")
-        self.save_btn.setStyleSheet("background-color: #27ae60; color: white; padding: 10px;")
+        self.save_btn = QPushButton("💾 Сохранить настройки")
+        self.save_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #27ae60; color: white; 
+                padding: 10px; border-radius: 4px; font-weight: bold;
+            }
+            QPushButton:hover { background-color: #2ecc71; }
+        """)
         self.save_btn.clicked.connect(self.save_settings)
         layout.addWidget(self.save_btn)
 
@@ -81,7 +87,6 @@ class SettingsWindow(QWidget):
     def browse_path(self):
         """
         Открытие диалога выбора папки для сохранения отчётов.
-        Обновляет поле ввода выбранным путём.
         """
         folder = QFileDialog.getExistingDirectory(self, "Выберите папку для отчётов")
         if folder:
@@ -89,8 +94,7 @@ class SettingsWindow(QWidget):
 
     def save_settings(self):
         """
-        Сохранение настроек.
-        В реальной системе настройки сохраняются в таблицу system_settings БД.
+        Сохранение настроек с русским диалогом подтверждения.
         """
         # TODO: Реализовать сохранение в БД через DatabaseManager
-        QMessageBox.information(self, "Успех", "Настройки успешно сохранены")
+        info(self, "Успех", "Настройки успешно сохранены")
