@@ -1,23 +1,19 @@
 # -*- coding: utf-8 -*-
-"""
-Модуль фонового сканирования сети.
-Запускает TCP-сканирование в отдельном потоке,
-определяет имена хостов и типы ОС,
-отправляет сигналы о прогрессе и результатах.
-Автор: Голуб Д.Н., группа о.ИЗДтс 23.1/Б4-23
-"""
+# Модуль фонового сканирования сети с поддержкой CIDR-масок.
+# Запускает TCP-сканирование в отдельном потоке,
+# определяет имена хостов и типы ОС,
+# отправляет сигналы о прогрессе и результатах.
+# Автор: Голуб Д.Н., группа о.ИЗДтс 23.1/Б4-23
 
-# Импорт компонентов для многопоточности в Qt
 from PySide6.QtCore import QThread, Signal
-# Импорт сканера портов
+import ipaddress
 from src.core.scanner import PortScanner
 
 
 class ScanWorker(QThread):
     """
     Рабочий поток для выполнения сканирования сети.
-    Работает в фоне, не блокируя интерфейс.
-    Отправляет сигналы о прогрессе и результатах.
+    Поддерживает CIDR-маски от /32 (1 хост) до /8 (16+ млн хостов).
     """
 
     # Сигнал обновления прогресса (процент, просканировано, всего, найдено)
@@ -31,7 +27,7 @@ class ScanWorker(QThread):
         """
         Инициализация рабочего потока.
 
-        :param ip_range: Диапазон IP для сканирования
+        :param ip_range: Диапазон IP в CIDR-нотации (например, 192.168.1.0/24)
         :param ports: Список портов для проверки
         :param timeout: Таймаут соединения в секундах
         """
@@ -45,42 +41,40 @@ class ScanWorker(QThread):
     def run(self):
         """
         Основной метод потока.
-        Выполняет полное сканирование с определением имён и типов ОС.
+        Выполняет полное сканирование с поддержкой CIDR-масок.
         """
         try:
-            # Парсим базовый IP из диапазона
-            base_ip = self.ip_range.split('/')[0]
-            ip_parts = base_ip.split('.')
+            # Парсим CIDR-диапазон через стандартный модуль ipaddress
+            network = ipaddress.ip_network(self.ip_range, strict=False)
 
-            # Проверяем корректность формата
-            if len(ip_parts) != 4:
-                self.error.emit("Некорректный формат IP-диапазона")
+            # Получаем все хосты в диапазоне (исключая network и broadcast)
+            hosts = list(network.hosts())
+            total_hosts = len(hosts)
+
+            if total_hosts == 0:
+                self.error.emit("В выбранном диапазоне нет доступных хостов")
                 return
 
-            # Всего хостов в диапазоне /24
-            total_hosts = 254
             scanned_hosts = 0
             all_results = []
             found_devices = 0
 
-            # Перебираем все IP в диапазоне
-            for i in range(1, 255):
+            # Перебираем все IP в диапазоне (не range(1,255)!)
+            for ip in hosts:
                 # Проверяем флаг остановки
                 if not self._is_running:
                     break
 
-                # Формируем IP-адрес
-                ip = f"{ip_parts[0]}.{ip_parts[1]}.{ip_parts[2]}.{i}"
+                ip_str = str(ip)
 
                 # Выполняем полное сканирование хоста
-                host_result = self.scanner.scan_host(ip, self.ports)
+                host_result = self.scanner.scan_host(ip_str, self.ports)
 
                 # Если есть открытые порты - добавляем в результаты
                 if host_result['open_ports']:
-                    # Распаковываем в формат для таблицы результатов
                     for port in host_result['open_ports']:
                         result = {
-                            'ip': ip,
+                            'ip': ip_str,
                             'port': port,
                             'service': self.scanner.get_service_name(port),
                             'hostname': host_result['hostname'],
@@ -97,14 +91,13 @@ class ScanWorker(QThread):
                 # Вычисляем процент прогресса
                 percent = int((scanned_hosts / total_hosts) * 100)
 
-                # Отправляем сигнал прогресса с количеством найденных
+                # Отправляем сигнал прогресса
                 self.progress.emit(percent, scanned_hosts, total_hosts, found_devices)
 
             # По завершении отправляем все результаты
             self.finished.emit(all_results)
 
         except Exception as e:
-            # При ошибке отправляем сигнал с описанием
             self.error.emit(f"Ошибка сканирования: {str(e)}")
 
     def stop(self):

@@ -2,14 +2,14 @@
 """
 Окно прогресса сканирования с прогресс-баром.
 Отображает текущий статус, количество просканированных хостов,
-найденные устройства и позволяет отменить сканирование.
+найденные устройства и оценку оставшегося времени.
 Автор: Голуб Д.Н., группа о.ИЗДтс 23.1/Б4-23
 """
 
 # Импорт компонентов PySide6
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QProgressBar,
-                               QPushButton, QFrame)
-from PySide6.QtCore import Qt
+                               QPushButton)
+from PySide6.QtCore import Qt, QTime
 
 
 class ScanProgressWindow(QWidget):
@@ -18,13 +18,17 @@ class ScanProgressWindow(QWidget):
     Обновляется через сигналы от ScanWorker.
     """
 
-    def __init__(self):
-        """Инициализация окна прогресса."""
+    def __init__(self, total_hosts: int = 0):
+        """
+        Инициализация окна прогресса.
+
+        :param total_hosts: Общее количество хостов для сканирования (для отображения до первого сигнала)
+        """
         super().__init__()
         self.setWindowTitle("Идёт сканирование")
-        self.resize(500, 280)
-        # Тёмный фон
-        self.setStyleSheet("background-color: #1e1e2e; color: #e6e6f0;")
+        self.resize(500, 320)
+        self.start_time = QTime.currentTime()
+        self.total_hosts = total_hosts
         self.init_ui()
 
     def init_ui(self):
@@ -59,8 +63,13 @@ class ScanProgressWindow(QWidget):
         """)
         layout.addWidget(self.progress_bar)
 
-        # Детальная информация
-        self.details_label = QLabel("Просканировано хостов: 0 / 254")
+        # Детальная информация — теперь использует переданное total_hosts
+        if self.total_hosts > 0:
+            initial_text = f"Просканировано хостов: 0 / {self.total_hosts}"
+        else:
+            initial_text = "Просканировано хостов: 0 / ..."
+
+        self.details_label = QLabel(initial_text)
         self.details_label.setAlignment(Qt.AlignCenter)
         self.details_label.setStyleSheet("font-size: 13px; color: #a0a0b0;")
         layout.addWidget(self.details_label)
@@ -70,6 +79,12 @@ class ScanProgressWindow(QWidget):
         self.found_label.setAlignment(Qt.AlignCenter)
         self.found_label.setStyleSheet("font-size: 13px; color: #27ae60; font-weight: bold;")
         layout.addWidget(self.found_label)
+
+        # Оценка оставшегося времени
+        self.time_label = QLabel("Оставшееся время: рассчитывается...")
+        self.time_label.setAlignment(Qt.AlignCenter)
+        self.time_label.setStyleSheet("font-size: 13px; color: #f39c12; font-weight: bold;")
+        layout.addWidget(self.time_label)
 
         layout.addSpacing(15)
 
@@ -100,8 +115,37 @@ class ScanProgressWindow(QWidget):
         self.details_label.setText(f"Просканировано хостов: {scanned} / {total}")
         self.found_label.setText(f"Найдено устройств с открытыми портами: {found}")
 
+        # Рассчитываем оставшееся время
+        if scanned > 0 and percent < 100:
+            elapsed = self.start_time.msecsTo(QTime.currentTime()) / 1000  # секунды
+            if elapsed > 0:
+                remaining_seconds = (elapsed / scanned) * (total - scanned)
+                self.time_label.setText(f"Оставшееся время: {self._format_time(remaining_seconds)}")
+            else:
+                self.time_label.setText("Оставшееся время: рассчитывается...")
+        else:
+            self.time_label.setText("Сканирование завершено!")
+
         # Обновляем статус
         if percent < 100:
             self.status_label.setText(f"🔍 Сканирование сети... ({percent}%)")
         else:
             self.status_label.setText("✓ Сканирование завершено!")
+
+    def _format_time(self, seconds: float) -> str:
+        """
+        Форматирование времени в читаемый вид.
+
+        :param seconds: Количество секунд
+        :return: Строка с форматированным временем
+        """
+        if seconds < 60:
+            return f"{int(seconds)} сек"
+        elif seconds < 3600:
+            minutes = int(seconds // 60)
+            secs = int(seconds % 60)
+            return f"{minutes} мин {secs} сек"
+        else:
+            hours = int(seconds // 3600)
+            minutes = int((seconds % 3600) // 60)
+            return f"{hours} ч {minutes} мин"

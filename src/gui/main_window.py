@@ -207,16 +207,37 @@ class MainWindow(QMainWindow):
             return
 
         params = dialog.get_scan_params()
-        ip_range = params['ip_range']
-        timeout = params['timeout']
-        ports = params['ports']
+        ip_range = params.get('ip_range', '')
+        timeout = params.get('timeout', 1)
+
+        # Безопасное получение списка портов
+        ports = params.get('ports')
+
+        if not ports:
+            # Fallback для старой версии scan_dialog
+            port_profile = params.get('port_profile', '')
+            if "Стандартные" in port_profile:
+                ports = [21, 22, 23, 80, 443, 445, 3389]
+            elif "Все" in port_profile:
+                ports = list(range(1, 1025))
+            else:
+                ports = [21, 22, 23, 80, 443, 445, 3389]
 
         # Проверка, что порты не пустые
         if not ports:
             warning(self, "Ошибка", "Не удалось определить список портов для сканирования.")
             return
 
-        self.progress_window = ScanProgressWindow()
+        # Вычисляем общее количество хостов для передачи в окно прогресса
+        try:
+            import ipaddress
+            network = ipaddress.ip_network(ip_range, strict=False)
+            total_hosts = max(1, network.num_addresses - 2)
+        except ValueError:
+            total_hosts = 0
+
+        # Создаём окно прогресса с правильным количеством хостов
+        self.progress_window = ScanProgressWindow(total_hosts=total_hosts)
         self.progress_window.show()
 
         self.scan_worker = ScanWorker(ip_range, ports, timeout)

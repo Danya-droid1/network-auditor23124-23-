@@ -1,39 +1,36 @@
 # -*- coding: utf-8 -*-
-"""
-Модуль TCP-сканирования сетевых портов.
-Реализует класс PortScanner для проверки открытых портов,
-определения имён хостов и типа операционной системы.
-Автор: Голуб Д.Н., группа о.ИЗДтс 23.1/Б4-23
-"""
+# Модуль TCP-сканирования сетевых портов с поддержкой многопоточности.
+# Реализует класс PortScanner для проверки открытых портов,
+# определения имён хостов и типа операционной системы.
+# Использует ThreadPoolExecutor для ускорения сканирования.
+# Автор: Голуб Д.Н., группа о.ИЗДтс 23.1/Б4-23
 
-# Импорт модуля socket для работы с сетевыми соединениями
 import socket
-# Импорт типов для типизации аргументов
-from typing import List, Dict, Tuple
-# Импорт модуля datetime для работы с датой и временем
+from typing import List, Dict
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 class PortScanner:
     """
     Класс для сканирования сетевых портов.
-    Реализует TCP-сканирование, определение имён хостов
-    и определение типа ОС по открытым портам.
+    Реализует TCP-сканирование с многопоточностью для ускорения.
     """
 
-    def __init__(self, timeout: int = 1):
+    def __init__(self, timeout: int = 1, max_workers: int = 50):
         """
         Инициализация сканера.
 
-        :param timeout: Таймаут соединения в секундах (по умолчанию 1 сек)
+        :param timeout: Таймаут соединения в секундах
+        :param max_workers: Максимальное количество потоков (по умолчанию 50)
         """
         self.timeout = timeout
+        self.max_workers = max_workers
         self.is_scanning = False
 
     def scan_port(self, ip: str, port: int) -> bool:
         """
         Проверка одного порта на IP-адресе.
-        Пытается установить TCP-соединение с указанным портом.
 
         :param ip: IP-адрес целевого хоста
         :param port: Номер порта для проверки
@@ -45,16 +42,12 @@ class PortScanner:
             result = sock.connect_ex((ip, port))
             sock.close()
             return result == 0
-        except Exception as e:
-            print(f"Ошибка при сканировании {ip}:{port} - {e}")
+        except Exception:
             return False
 
     def get_service_name(self, port: int) -> str:
         """
         Получение названия сервиса по номеру порта.
-
-        :param port: Номер порта
-        :return: Название сервиса или 'Unknown-<порт>'
         """
         services = {
             21: 'FTP', 22: 'SSH', 23: 'Telnet', 25: 'SMTP',
@@ -66,94 +59,94 @@ class PortScanner:
 
     def get_hostname(self, ip: str) -> str:
         """
-        Получение имени хоста по IP-адресу через обратный DNS-запрос.
-        Если имя не удаётся определить, возвращает 'Неизвестно'.
-
-        :param ip: IP-адрес хоста
-        :return: Имя хоста или 'Неизвестно'
+        Получение имени хоста через обратный DNS-запрос.
         """
         try:
-            # Выполняем обратный DNS-запрос
             hostname, _, _ = socket.gethostbyaddr(ip)
             return hostname
         except (socket.herror, socket.gaierror, OSError):
-            # Если имя не найдено или произошла ошибка
             return "Неизвестно"
 
     def get_os_type(self, open_ports: List[int]) -> str:
         """
-        Определение типа операционной системы по открытым портам.
-        Эвристический метод, основанный на типичных сервисах ОС.
-
-        :param open_ports: Список открытых портов на хосте
-        :return: Тип ОС: 'Windows', 'Linux' или 'Неизвестно'
+        Определение типа ОС по открытым портам (эвристический метод).
         """
-        # RDP (3389) или SMB (445) характерны для Windows
         if 3389 in open_ports or 445 in open_ports:
             return "Windows"
-        # SSH (22) без RDP/SMB обычно указывает на Linux/Unix
         if 22 in open_ports:
             return "Linux"
-        # HTTP/HTTPS может быть на любой ОС
-        if 80 in open_ports or 443 in open_ports:
-            return "Неизвестно"
         return "Неизвестно"
+
+    def _scan_single_port(self, ip: str, port: int) -> Dict:
+        """
+        Сканирование одного порта. Вспомогательный метод для многопоточности.
+
+        :return: Словарь с результатом или None, если порт закрыт
+        """
+        if self.scan_port(ip, port):
+            return {
+                'ip': ip,
+                'port': port,
+                'service': self.get_service_name(port),
+                'is_open': True
+            }
+        return None
 
     def scan_host(self, ip: str, ports: List[int]) -> Dict:
         """
-        Полное сканирование одного хоста.
-        Возвращает информацию об открытых портах, имени хоста и типе ОС.
+        Полное сканирование одного хоста С ИСПОЛЬЗОВАНИЕМ МНОГОПОТОЧНОСТИ.
+        Сканирует все порты параллельно, что ускоряет работу в N раз.
 
         :param ip: IP-адрес хоста
         :param ports: Список портов для сканирования
-        :return: Словарь с результатами сканирования хоста
+        :return: Словарь с результатами (открытые порты, имя хоста, тип ОС)
         """
         open_ports = []
 
-        # Сканируем все порты
-        for port in ports:
-            if self.scan_port(ip, port):
-                open_ports.append(port)
+        # === МНОГОПОТОЧНОЕ СКНИРОВАНИЕ ===
+        # Создаём пул потоков (по умолчанию 50 потоков)
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            # Отправляем все порты на сканирование параллельно
+            future_to_port = {
+                executor.submit(self._scan_single_port, ip, port): port
+                for port in ports
+            }
 
-        # Получаем имя хоста
+            # Собираем результаты по мере готовности
+            for future in as_completed(future_to_port):
+                result = future.result()
+                if result is not None:
+                    open_ports.append(result['port'])
+
+        # Получаем имя хоста и тип ОС
         hostname = self.get_hostname(ip)
-
-        # Определяем тип ОС
         os_type = self.get_os_type(open_ports)
 
-        # Формируем результат
-        result = {
+        return {
             'ip': ip,
             'hostname': hostname,
             'os_type': os_type,
-            'open_ports': open_ports,
-            'services': [self.get_service_name(p) for p in open_ports],
+            'open_ports': sorted(open_ports),
+            'services': [self.get_service_name(p) for p in sorted(open_ports)],
             'detected_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
-
-        return result
 
     def scan_host_ports(self, ip: str, ports: List[int]) -> List[Dict]:
         """
         Сканирование одного хоста с возвратом списка открытых портов.
         Используется для отображения в таблице результатов.
-
-        :param ip: IP-адрес хоста
-        :param ports: Список портов для сканирования
-        :return: Список словарей с информацией об открытых портах
         """
         results = []
-        for port in ports:
-            is_open = self.scan_port(ip, port)
-            if is_open:
-                result = {
-                    'ip': ip,
-                    'port': port,
-                    'service': self.get_service_name(port),
-                    'is_open': True,
-                    'detected_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                }
-                results.append(result)
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            future_to_port = {
+                executor.submit(self._scan_single_port, ip, port): port
+                for port in ports
+            }
+            for future in as_completed(future_to_port):
+                result = future.result()
+                if result is not None:
+                    result['detected_at'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    results.append(result)
         return results
 
     def stop_scanning(self):
