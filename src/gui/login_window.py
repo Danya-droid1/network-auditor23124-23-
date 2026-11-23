@@ -2,23 +2,19 @@
 """
 Окно авторизации пользователя.
 Проверяет учётные данные и открывает главное окно.
-Все диалоги используют русские кнопки через обёртку dialogs.py.
 Автор: Голуб Д.Н., группа о.ИЗДтс 23.1/Б4-23
 """
 
-# Импорт компонентов PySide6
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout,
                                QLabel, QLineEdit, QPushButton)
 from PySide6.QtCore import Qt
 
-# Импорт обёртки диалогов с русскими кнопками
-from src.utils.dialogs import info, warning
+from src.utils.dialogs import warning
 
 
 class LoginWindow(QMainWindow):
     """
     Окно входа в систему Network Auditor.
-    Содержит поля для ввода логина и пароля.
     """
 
     def __init__(self):
@@ -28,22 +24,31 @@ class LoginWindow(QMainWindow):
         self.resize(400, 300)
         self.init_ui()
 
-        # Тестовые учётные данные для демонстрации
+        # Тестовые учётные данные
         self.test_users = {
             "admin": {
                 "password": "AdminSecure2026!",
                 "role": "admin",
-                "full_name": "Администратор ИБ"
+                "full_name": "Администратор ИБ",
+                "email": "admin@muiv.ru"
             },
             "analyst": {
                 "password": "AnalystSecure2026!",
-                "role": "analyst",
-                "full_name": "Аналитик ИБ"
+                "role": "auditor",
+                "full_name": "Аналитик ИБ",
+                "email": "analyst@muiv.ru"
             },
             "auditor": {
                 "password": "AuditorSecure2026!",
                 "role": "auditor",
-                "full_name": "Аудитор"
+                "full_name": "Аудитор",
+                "email": "auditor@muiv.ru"
+            },
+            "user": {
+                "password": "UserSecure2026!",
+                "role": "user",
+                "full_name": "Пользователь",
+                "email": "user@muiv.ru"
             }
         }
 
@@ -89,9 +94,7 @@ class LoginWindow(QMainWindow):
         central_widget.setLayout(layout)
 
     def authenticate(self):
-        """
-        Проверка введённых учётных данных.
-        """
+        """Проверка введённых учётных данных."""
         username = self.username_input.text().strip()
         password = self.password_input.text()
 
@@ -99,19 +102,15 @@ class LoginWindow(QMainWindow):
             user_data = {
                 "username": username,
                 "role": self.test_users[username]["role"],
-                "full_name": self.test_users[username]["full_name"]
+                "full_name": self.test_users[username]["full_name"],
+                "email": self.test_users[username].get("email", "")
             }
             self.open_main_window(user_data)
         else:
-            # Русская кнопка "ОК"
             warning(self, "Ошибка", "Неверный логин или пароль")
 
     def open_main_window(self, user_data: dict):
-        """
-        Открытие главного окна приложения после успешной авторизации.
-
-        :param user_data: Словарь с данными авторизованного пользователя
-        """
+        """Открытие главного окна после успешной авторизации."""
         from src.gui.main_window import MainWindow
         self.main_window = MainWindow(user_data)
         self.main_window.show()

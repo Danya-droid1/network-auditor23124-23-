@@ -1,17 +1,15 @@
 # -*- coding: utf-8 -*-
 """
 Главное окно приложения с боковым меню.
-Реализует навигацию между разделами с учётом роли пользователя.
+Реализует навигацию между разделами с учётом роли пользователя и прав доступа.
 Интегрирует реальное сканирование сети через ScanWorker с поддержкой CIDR.
 Автор: Голуб Д.Н., группа о.ИЗДтс 23.1/Б4-23
 """
 
-# Импорт компонентов PySide6
 from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
                                QPushButton, QStackedWidget, QLabel, QFrame)
 from PySide6.QtCore import Qt
 
-# Импорт всех окон приложения
 from src.gui.dashboard_window import DashboardWindow
 from src.gui.scan_dialog import ScanDialog
 from src.gui.scan_progress_window import ScanProgressWindow
@@ -22,10 +20,9 @@ from src.gui.profile_window import ProfileWindow
 from src.gui.about_window import AboutWindow
 from src.gui.vulnerability_db_window import VulnerabilityDBWindow
 from src.gui.assets_window import AssetsWindow
+from src.gui.users_window import UsersWindow, ROLE_PERMISSIONS
 
-# Импорт рабочего потока для сканирования
 from src.core.scan_worker import ScanWorker
-# Импорт обёртки диалогов с русскими кнопками
 from src.utils.dialogs import info, warning, critical, question
 
 
@@ -45,6 +42,9 @@ class MainWindow(QMainWindow):
         self.user_data = user_data
         self.scan_worker = None
         self.last_scan_results = []
+
+        # Получаем права доступа для текущей роли
+        self.permissions = ROLE_PERMISSIONS.get(user_data.get('role', 'user'), {})
 
         self.setWindowTitle(f"Network Auditor — {user_data.get('role', 'User').capitalize()}")
         self.resize(1200, 800)
@@ -83,27 +83,42 @@ class MainWindow(QMainWindow):
             "font-size: 12px; color: #a0a0b0; background: transparent; margin-bottom: 20px;")
         sidebar_layout.addWidget(self.fullname_label)
 
+        # Кнопки навигации с учётом прав доступа
         self.btn_dashboard = self.create_nav_button("📊 Дашборд")
-        self.btn_scan = self.create_nav_button("🔍 Новое сканирование")
-        self.btn_results = self.create_nav_button("📋 Результаты")
-        self.btn_assets = self.create_nav_button("💻 Активы")
-        self.btn_reports = self.create_nav_button("📄 Отчёты")
-
         sidebar_layout.addWidget(self.btn_dashboard)
-        sidebar_layout.addWidget(self.btn_scan)
-        sidebar_layout.addWidget(self.btn_results)
-        sidebar_layout.addWidget(self.btn_assets)
-        sidebar_layout.addWidget(self.btn_reports)
 
-        if self.user_data.get('role') == 'admin':
+        if self.permissions.get('scan', False):
+            self.btn_scan = self.create_nav_button("🔍 Новое сканирование")
+            sidebar_layout.addWidget(self.btn_scan)
+
+        if self.permissions.get('results', False):
+            self.btn_results = self.create_nav_button("📋 Результаты")
+            sidebar_layout.addWidget(self.btn_results)
+
+        if self.permissions.get('assets', False):
+            self.btn_assets = self.create_nav_button("💻 Активы")
+            sidebar_layout.addWidget(self.btn_assets)
+
+        if self.permissions.get('reports', False):
+            self.btn_reports = self.create_nav_button("📄 Отчёты")
+            sidebar_layout.addWidget(self.btn_reports)
+
+        if self.permissions.get('vulnerabilities', False):
             self.btn_vulnerabilities = self.create_nav_button("🛡️ Уязвимости")
-            self.btn_settings = self.create_nav_button("⚙️ Настройки")
             sidebar_layout.addWidget(self.btn_vulnerabilities)
+
+        if self.permissions.get('settings', False):
+            self.btn_settings = self.create_nav_button("⚙️ Настройки")
             sidebar_layout.addWidget(self.btn_settings)
+
+        if self.permissions.get('users', False):
+            self.btn_users = self.create_nav_button("👥 Пользователи")
+            sidebar_layout.addWidget(self.btn_users)
 
         sidebar_layout.addStretch()
 
-        self.btn_profile = self.create_nav_button("👤 Профиль")
+        # Нижние кнопки (всегда доступны)
+        self.btn_profile = self.create_nav_button("👤 Личный кабинет")
         self.btn_about = self.create_nav_button("ℹ️ О программе")
         self.btn_logout = self.create_nav_button("🚪 Выход")
 
@@ -114,69 +129,115 @@ class MainWindow(QMainWindow):
         # === Область контента ===
         self.content_area = QStackedWidget()
 
+        # Индексация окон
+        idx = 0
         self.dashboard = DashboardWindow(self.user_data)
-        self.results = ResultsWindow()
-        self.assets = AssetsWindow()
-        self.reports = ReportsWindow()
-        self.profile = ProfileWindow(self.user_data)
-        self.about = AboutWindow()
+        self.content_area.addWidget(self.dashboard)
+        dashboard_idx = idx
+        idx += 1
 
-        self.content_area.addWidget(self.dashboard)  # 0
-        self.content_area.addWidget(self.results)  # 1
-        self.content_area.addWidget(self.assets)  # 2
-        self.content_area.addWidget(self.reports)  # 3
-        self.content_area.addWidget(self.profile)  # 4
-        self.content_area.addWidget(self.about)  # 5
+        if self.permissions.get('scan', False):
+            self.results = ResultsWindow()
+            self.content_area.addWidget(self.results)
+            results_idx = idx
+            idx += 1
 
-        if self.user_data.get('role') == 'admin':
-            self.vulnerabilities = VulnerabilityDBWindow()  # 6
-            self.settings = SettingsWindow()  # 7
+        if self.permissions.get('assets', False):
+            self.assets = AssetsWindow()
+            self.content_area.addWidget(self.assets)
+            assets_idx = idx
+            idx += 1
+
+        if self.permissions.get('reports', False):
+            self.reports = ReportsWindow()
+            self.content_area.addWidget(self.reports)
+            reports_idx = idx
+            idx += 1
+
+        if self.permissions.get('vulnerabilities', False):
+            self.vulnerabilities = VulnerabilityDBWindow()
             self.content_area.addWidget(self.vulnerabilities)
+            vuln_idx = idx
+            idx += 1
+
+        if self.permissions.get('settings', False):
+            self.settings = SettingsWindow()
             self.content_area.addWidget(self.settings)
+            settings_idx = idx
+            idx += 1
+
+        if self.permissions.get('users', False):
+            self.users = UsersWindow()
+            self.content_area.addWidget(self.users)
+            users_idx = idx
+            idx += 1
+
+        self.profile = ProfileWindow(self.user_data)
+        self.content_area.addWidget(self.profile)
+        profile_idx = idx
+        idx += 1
+
+        self.about = AboutWindow()
+        self.content_area.addWidget(self.about)
+        about_idx = idx
 
         main_layout.addWidget(sidebar)
         main_layout.addWidget(self.content_area)
         central_widget.setLayout(main_layout)
 
         # === Подключение обработчиков ===
-        self.btn_dashboard.clicked.connect(lambda: self.content_area.setCurrentIndex(0))
-        self.btn_scan.clicked.connect(self.start_scan)
-        self.btn_results.clicked.connect(lambda: self.content_area.setCurrentIndex(1))
-        self.btn_assets.clicked.connect(lambda: self.content_area.setCurrentIndex(2))
-        self.btn_reports.clicked.connect(lambda: self.content_area.setCurrentIndex(3))
-        self.btn_profile.clicked.connect(lambda: self.content_area.setCurrentIndex(4))
-        self.btn_about.clicked.connect(lambda: self.content_area.setCurrentIndex(5))
+        self.btn_dashboard.clicked.connect(lambda: self.content_area.setCurrentIndex(dashboard_idx))
 
-        if self.user_data.get('role') == 'admin':
-            self.btn_vulnerabilities.clicked.connect(lambda: self.content_area.setCurrentIndex(6))
-            self.btn_settings.clicked.connect(lambda: self.content_area.setCurrentIndex(7))
+        if self.permissions.get('scan', False):
+            self.btn_scan.clicked.connect(self.start_scan)
+            self.btn_results.clicked.connect(lambda: self.content_area.setCurrentIndex(results_idx))
 
+        if self.permissions.get('assets', False):
+            self.btn_assets.clicked.connect(lambda: self.content_area.setCurrentIndex(assets_idx))
+
+        if self.permissions.get('reports', False):
+            self.btn_reports.clicked.connect(lambda: self.content_area.setCurrentIndex(reports_idx))
+
+        if self.permissions.get('vulnerabilities', False):
+            self.btn_vulnerabilities.clicked.connect(lambda: self.content_area.setCurrentIndex(vuln_idx))
+
+        if self.permissions.get('settings', False):
+            self.btn_settings.clicked.connect(lambda: self.content_area.setCurrentIndex(settings_idx))
+
+        if self.permissions.get('users', False):
+            self.btn_users.clicked.connect(lambda: self.content_area.setCurrentIndex(users_idx))
+
+        self.btn_profile.clicked.connect(lambda: self.content_area.setCurrentIndex(profile_idx))
+        self.btn_about.clicked.connect(lambda: self.content_area.setCurrentIndex(about_idx))
         self.btn_logout.clicked.connect(self.logout)
 
         # Подключаем кнопки на дашборде
         self.dashboard.btn_new_scan.clicked.connect(self.start_scan)
-        self.dashboard.btn_view_reports.clicked.connect(lambda: self.content_area.setCurrentIndex(3))
-        self.dashboard.btn_manage_assets.clicked.connect(lambda: self.content_area.setCurrentIndex(2))
+
+        if self.permissions.get('reports', False):
+            self.dashboard.btn_view_reports.clicked.connect(lambda: self.content_area.setCurrentIndex(reports_idx))
+
+        if self.permissions.get('assets', False):
+            self.dashboard.btn_manage_assets.clicked.connect(lambda: self.content_area.setCurrentIndex(assets_idx))
 
         # Устанавливаем контекст для окна результатов
-        self.results.set_context(self.user_data.get('username', 'unknown'), self.reports)
+        if self.permissions.get('results', False):
+            self.results.set_context(self.user_data.get('username', 'unknown'),
+                                     self.reports if self.permissions.get('reports', False) else None)
 
-        # === Подключаем сигнал изменения профиля ===
+        # Подключаем сигнал изменения профиля
         self.profile.profile_updated.connect(self.on_profile_updated)
 
     def on_profile_updated(self, new_user_data: dict):
         """
         Обработчик сигнала об изменении данных профиля.
-        Обновляет метки в боковом меню и заголовок окна.
         """
         self.user_data = new_user_data
         self.fullname_label.setText(new_user_data.get('full_name', ''))
         self.setWindowTitle(f"Network Auditor — {new_user_data.get('role', 'User').capitalize()}")
 
     def create_nav_button(self, text: str) -> QPushButton:
-        """
-        Создание стилизованной кнопки навигации в тёмной теме.
-        """
+        """Создание стилизованной кнопки навигации."""
         btn = QPushButton(text)
         btn.setStyleSheet("""
             QPushButton {
@@ -198,10 +259,7 @@ class MainWindow(QMainWindow):
         return btn
 
     def start_scan(self):
-        """
-        Запуск процесса сканирования сети.
-        Открывает диалог настройки, затем запускает ScanWorker в фоне.
-        """
+        """Запуск процесса сканирования сети."""
         dialog = ScanDialog(self)
         if not dialog.exec():
             return
@@ -209,12 +267,9 @@ class MainWindow(QMainWindow):
         params = dialog.get_scan_params()
         ip_range = params.get('ip_range', '')
         timeout = params.get('timeout', 1)
-
-        # Безопасное получение списка портов
         ports = params.get('ports')
 
         if not ports:
-            # Fallback для старой версии scan_dialog
             port_profile = params.get('port_profile', '')
             if "Стандартные" in port_profile:
                 ports = [21, 22, 23, 80, 443, 445, 3389]
@@ -223,12 +278,10 @@ class MainWindow(QMainWindow):
             else:
                 ports = [21, 22, 23, 80, 443, 445, 3389]
 
-        # Проверка, что порты не пустые
         if not ports:
-            warning(self, "Ошибка", "Не удалось определить список портов для сканирования.")
+            warning(self, "Ошибка", "Не удалось определить список портов.")
             return
 
-        # Вычисляем общее количество хостов для передачи в окно прогресса
         try:
             import ipaddress
             network = ipaddress.ip_network(ip_range, strict=False)
@@ -236,7 +289,6 @@ class MainWindow(QMainWindow):
         except ValueError:
             total_hosts = 0
 
-        # Создаём окно прогресса с правильным количеством хостов
         self.progress_window = ScanProgressWindow(total_hosts=total_hosts)
         self.progress_window.show()
 
@@ -248,39 +300,38 @@ class MainWindow(QMainWindow):
         self.scan_worker.start()
 
     def on_scan_finished(self, results: list):
-        """
-        Обработчик завершения сканирования.
-        """
+        """Обработчик завершения сканирования."""
         if hasattr(self, 'progress_window'):
             self.progress_window.close()
 
         self.last_scan_results = results
-        self.results.load_real_data(results)
-        new_assets_count = self.assets.add_from_scan_results(results)
+
+        if self.permissions.get('results', False):
+            self.results.load_real_data(results)
+
+        if self.permissions.get('assets', False):
+            new_assets_count = self.assets.add_from_scan_results(results)
+
         self.dashboard.update_statistics(results)
-        self.content_area.setCurrentIndex(1)
+
+        if self.permissions.get('results', False):
+            self.content_area.setCurrentIndex(1)
 
         info(
             self,
             "Сканирование завершено",
             f"Сканирование успешно завершено.\n\n"
-            f"Найдено открытых портов: {len(results)}\n"
-            f"Новых активов добавлено в реестр: {new_assets_count}"
+            f"Найдено открытых портов: {len(results)}"
         )
 
     def on_scan_error(self, error_msg: str):
-        """
-        Обработчик ошибки сканирования.
-        """
+        """Обработчик ошибки сканирования."""
         if hasattr(self, 'progress_window'):
             self.progress_window.close()
-
         critical(self, "Ошибка сканирования", error_msg)
 
     def logout(self):
-        """
-        Выход из системы с русскими кнопками подтверждения.
-        """
+        """Выход из системы."""
         if question(self, "Выход", "Вы уверены, что хотите выйти?"):
             from src.gui.login_window import LoginWindow
             self.login_window = LoginWindow()
