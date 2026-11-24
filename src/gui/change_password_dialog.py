@@ -1,9 +1,7 @@
 # -*- coding: utf-8 -*-
-"""
-Диалоговое окно смены пароля пользователя.
-Проверяет текущий пароль и позволяет установить новый.
-Автор: Голуб Д.Н., группа о.ИЗДтс 23.1/Б4-23
-"""
+# Диалоговое окно смены пароля пользователя.
+# Проверяет текущий пароль и сохраняет новый в БД через UserManager.
+# Автор: Голуб Д.Н., группа о.ИЗДтс 23.1/Б4-23
 
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QFormLayout,
                                QLabel, QLineEdit, QPushButton, QHBoxLayout)
@@ -13,13 +11,19 @@ from src.utils.dialogs import warning
 
 
 class ChangePasswordDialog(QDialog):
-    """
-    Диалог смены пароля пользователя.
-    """
+    """Диалог смены пароля пользователя."""
 
-    def __init__(self, parent=None):
-        """Инициализация диалога смены пароля."""
+    def __init__(self, parent=None, user_manager=None, user_id: int = None):
+        """
+        Инициализация диалога.
+
+        :param parent: Родительское окно
+        :param user_manager: Экземпляр UserManager
+        :param user_id: ID текущего пользователя
+        """
         super().__init__(parent)
+        self.user_manager = user_manager
+        self.user_id = user_id
         self.setWindowTitle("Смена пароля")
         self.resize(450, 280)
         self.init_ui()
@@ -30,12 +34,10 @@ class ChangePasswordDialog(QDialog):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
 
-        # Заголовок
         title = QLabel("Смена пароля")
         title.setStyleSheet("font-size: 18px; font-weight: bold; color: #4a9eff; background: transparent;")
         layout.addWidget(title)
 
-        # Форма смены пароля
         form_layout = QFormLayout()
         form_layout.setSpacing(10)
 
@@ -56,7 +58,6 @@ class ChangePasswordDialog(QDialog):
 
         layout.addLayout(form_layout)
 
-        # Кнопки
         btn_layout = QHBoxLayout()
 
         change_btn = QPushButton("🔑 Сменить пароль")
@@ -86,18 +87,13 @@ class ChangePasswordDialog(QDialog):
         self.setLayout(layout)
 
     def change_password(self):
-        """Обработка смены пароля."""
+        """Обработка смены пароля через БД."""
         old_pwd = self.old_password.text()
         new_pwd = self.new_password.text()
         confirm = self.confirm_password.text()
 
         if not old_pwd or not new_pwd or not confirm:
             warning(self, "Ошибка", "Пожалуйста, заполните все поля.")
-            return
-
-        # Проверка текущего пароля (для демо)
-        if old_pwd not in ["AdminSecure2026!", "AnalystSecure2026!", "AuditorSecure2026!", "UserSecure2026!"]:
-            warning(self, "Ошибка", "Неверный текущий пароль.")
             return
 
         if len(new_pwd) < 8:
@@ -108,4 +104,10 @@ class ChangePasswordDialog(QDialog):
             warning(self, "Ошибка", "Пароли не совпадают.")
             return
 
-        self.accept()
+        # Смена пароля через UserManager
+        success = self.user_manager.change_password(self.user_id, old_pwd, new_pwd)
+
+        if success:
+            self.accept()
+        else:
+            warning(self, "Ошибка", "Неверный текущий пароль или ошибка сохранения.")

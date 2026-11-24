@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
-"""
-Главное окно приложения с боковым меню.
-Реализует навигацию между разделами с учётом роли пользователя и прав доступа.
-Интегрирует реальное сканирование сети через ScanWorker с поддержкой CIDR.
-Автор: Голуб Д.Н., группа о.ИЗДтс 23.1/Б4-23
-"""
+# Главное окно приложения с боковым меню.
+# Реализует навигацию между разделами с учётом роли пользователя и прав доступа.
+# Интегрирует реальное сканирование сети через ScanWorker с поддержкой CIDR.
+# Автор: Голуб Д.Н., группа о.ИЗДтс 23.1/Б4-23
 
 from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
                                QPushButton, QStackedWidget, QLabel, QFrame)
@@ -20,31 +18,30 @@ from src.gui.profile_window import ProfileWindow
 from src.gui.about_window import AboutWindow
 from src.gui.vulnerability_db_window import VulnerabilityDBWindow
 from src.gui.assets_window import AssetsWindow
-from src.gui.users_window import UsersWindow, ROLE_PERMISSIONS
+from src.gui.users_window import UsersWindow
 
 from src.core.scan_worker import ScanWorker
 from src.utils.dialogs import info, warning, critical, question
 
 
 class MainWindow(QMainWindow):
-    """
-    Главное окно приложения Network Auditor.
-    Содержит боковое меню навигации и область контента.
-    """
+    """Главное окно приложения Network Auditor."""
 
-    def __init__(self, user_data: dict):
+    def __init__(self, user_data: dict, user_manager):
         """
         Инициализация главного окна.
 
         :param user_data: Словарь с данными авторизованного пользователя
+        :param user_manager: Экземпляр UserManager для работы с БД
         """
         super().__init__()
         self.user_data = user_data
+        self.user_manager = user_manager
         self.scan_worker = None
         self.last_scan_results = []
 
-        # Получаем права доступа для текущей роли
-        self.permissions = ROLE_PERMISSIONS.get(user_data.get('role', 'user'), {})
+        # Права доступа из БД
+        self.permissions = user_data.get('permissions', {})
 
         self.setWindowTitle(f"Network Auditor — {user_data.get('role', 'User').capitalize()}")
         self.resize(1200, 800)
@@ -86,6 +83,14 @@ class MainWindow(QMainWindow):
         # Кнопки навигации с учётом прав доступа
         self.btn_dashboard = self.create_nav_button("📊 Дашборд")
         sidebar_layout.addWidget(self.btn_dashboard)
+
+        self.btn_scan = None
+        self.btn_results = None
+        self.btn_assets = None
+        self.btn_reports = None
+        self.btn_vulnerabilities = None
+        self.btn_settings = None
+        self.btn_users = None
 
         if self.permissions.get('scan', False):
             self.btn_scan = self.create_nav_button("🔍 Новое сканирование")
@@ -167,12 +172,12 @@ class MainWindow(QMainWindow):
             idx += 1
 
         if self.permissions.get('users', False):
-            self.users = UsersWindow()
+            self.users = UsersWindow(self.user_manager)
             self.content_area.addWidget(self.users)
             users_idx = idx
             idx += 1
 
-        self.profile = ProfileWindow(self.user_data)
+        self.profile = ProfileWindow(self.user_data, self.user_manager)
         self.content_area.addWidget(self.profile)
         profile_idx = idx
         idx += 1
@@ -188,51 +193,45 @@ class MainWindow(QMainWindow):
         # === Подключение обработчиков ===
         self.btn_dashboard.clicked.connect(lambda: self.content_area.setCurrentIndex(dashboard_idx))
 
-        if self.permissions.get('scan', False):
+        if self.btn_scan:
             self.btn_scan.clicked.connect(self.start_scan)
+        if self.btn_results:
             self.btn_results.clicked.connect(lambda: self.content_area.setCurrentIndex(results_idx))
-
-        if self.permissions.get('assets', False):
+        if self.btn_assets:
             self.btn_assets.clicked.connect(lambda: self.content_area.setCurrentIndex(assets_idx))
-
-        if self.permissions.get('reports', False):
+        if self.btn_reports:
             self.btn_reports.clicked.connect(lambda: self.content_area.setCurrentIndex(reports_idx))
-
-        if self.permissions.get('vulnerabilities', False):
+        if self.btn_vulnerabilities:
             self.btn_vulnerabilities.clicked.connect(lambda: self.content_area.setCurrentIndex(vuln_idx))
-
-        if self.permissions.get('settings', False):
+        if self.btn_settings:
             self.btn_settings.clicked.connect(lambda: self.content_area.setCurrentIndex(settings_idx))
-
-        if self.permissions.get('users', False):
+        if self.btn_users:
             self.btn_users.clicked.connect(lambda: self.content_area.setCurrentIndex(users_idx))
 
         self.btn_profile.clicked.connect(lambda: self.content_area.setCurrentIndex(profile_idx))
         self.btn_about.clicked.connect(lambda: self.content_area.setCurrentIndex(about_idx))
         self.btn_logout.clicked.connect(self.logout)
 
-        # Подключаем кнопки на дашборде
+        # Кнопки на дашборде
         self.dashboard.btn_new_scan.clicked.connect(self.start_scan)
-
-        if self.permissions.get('reports', False):
+        if self.btn_reports:
             self.dashboard.btn_view_reports.clicked.connect(lambda: self.content_area.setCurrentIndex(reports_idx))
-
-        if self.permissions.get('assets', False):
+        if self.btn_assets:
             self.dashboard.btn_manage_assets.clicked.connect(lambda: self.content_area.setCurrentIndex(assets_idx))
 
-        # Устанавливаем контекст для окна результатов
+        # Контекст для результатов
         if self.permissions.get('results', False):
-            self.results.set_context(self.user_data.get('username', 'unknown'),
-                                     self.reports if self.permissions.get('reports', False) else None)
+            self.results.set_context(
+                self.user_data.get('username', 'unknown'),
+                self.reports if self.permissions.get('reports', False) else None
+            )
 
-        # Подключаем сигнал изменения профиля
+        # Сигнал изменения профиля
         self.profile.profile_updated.connect(self.on_profile_updated)
 
     def on_profile_updated(self, new_user_data: dict):
-        """
-        Обработчик сигнала об изменении данных профиля.
-        """
-        self.user_data = new_user_data
+        """Обработчик изменения данных профиля."""
+        self.user_data.update(new_user_data)
         self.fullname_label.setText(new_user_data.get('full_name', ''))
         self.setWindowTitle(f"Network Auditor — {new_user_data.get('role', 'User').capitalize()}")
 
@@ -249,12 +248,8 @@ class MainWindow(QMainWindow):
                 border-radius: 5px;
                 font-size: 13px;
             }
-            QPushButton:hover {
-                background-color: #2a2a3e;
-            }
-            QPushButton:pressed {
-                background-color: #3a3a52;
-            }
+            QPushButton:hover { background-color: #2a2a3e; }
+            QPushButton:pressed { background-color: #3a3a52; }
         """)
         return btn
 
@@ -334,6 +329,6 @@ class MainWindow(QMainWindow):
         """Выход из системы."""
         if question(self, "Выход", "Вы уверены, что хотите выйти?"):
             from src.gui.login_window import LoginWindow
-            self.login_window = LoginWindow()
+            self.login_window = LoginWindow(self.user_manager)
             self.login_window.show()
             self.close()

@@ -1,76 +1,29 @@
 # -*- coding: utf-8 -*-
-"""
-Окно управления пользователями системы.
-Доступно только администратору.
-Позволяет добавлять, редактировать и удалять пользователей,
-а также назначать им роли и права доступа.
-Автор: Голуб Д.Н., группа о.ИЗДтс 23.1/Б4-23
-"""
+# Окно управления пользователями системы.
+# Доступно только администратору.
+# Все CRUD-операции выполняются через UserManager в PostgreSQL.
+# Автор: Голуб Д.Н., группа о.ИЗДтс 23.1/Б4-23
 
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                                QTableWidget, QTableWidgetItem, QPushButton,
                                QDialog, QFormLayout, QLineEdit, QComboBox,
-                               QHeaderView, QCheckBox, QGroupBox)
+                               QHeaderView)
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor
 
 from src.utils.dialogs import info, warning, question
 
-# Права доступа для каждой роли
-ROLE_PERMISSIONS = {
-    'admin': {
-        'dashboard': True,
-        'scan': True,
-        'results': True,
-        'assets': True,
-        'reports': True,
-        'vulnerabilities': True,
-        'settings': True,
-        'users': True
-    },
-    'auditor': {
-        'dashboard': True,
-        'scan': True,
-        'results': True,
-        'assets': True,
-        'reports': True,
-        'vulnerabilities': True,
-        'settings': True,
-        'users': False
-    },
-    'user': {
-        'dashboard': True,
-        'scan': False,
-        'results': False,
-        'assets': False,
-        'reports': False,
-        'vulnerabilities': False,
-        'settings': False,
-        'users': False
-    }
-}
-
 
 class UsersWindow(QWidget):
-    """
-    Окно управления пользователями системы.
-    Доступно только администратору.
-    """
+    """Окно управления пользователями системы."""
 
-    def __init__(self):
-        """Инициализация окна управления пользователями."""
+    def __init__(self, user_manager):
+        """
+        Инициализация окна управления пользователями.
+
+        :param user_manager: Экземпляр UserManager
+        """
         super().__init__()
-        # Список пользователей в памяти
-        self.users = [
-            {'username': 'admin', 'password': 'AdminSecure2026!', 'role': 'admin', 'full_name': 'Администратор ИБ',
-             'email': 'admin@muiv.ru'},
-            {'username': 'analyst', 'password': 'AnalystSecure2026!', 'role': 'auditor', 'full_name': 'Аналитик ИБ',
-             'email': 'analyst@muiv.ru'},
-            {'username': 'auditor', 'password': 'AuditorSecure2026!', 'role': 'auditor', 'full_name': 'Аудитор',
-             'email': 'auditor@muiv.ru'},
-            {'username': 'user', 'password': 'UserSecure2026!', 'role': 'user', 'full_name': 'Пользователь',
-             'email': 'user@muiv.ru'}
-        ]
+        self.user_manager = user_manager
         self.init_ui()
 
     def init_ui(self):
@@ -82,14 +35,14 @@ class UsersWindow(QWidget):
         header.setStyleSheet("font-size: 20px; font-weight: bold; color: #e6e6f0; background: transparent;")
         layout.addWidget(header)
 
-        self.info_label = QLabel(f"Всего пользователей: {len(self.users)}")
+        self.info_label = QLabel("Загрузка...")
         self.info_label.setStyleSheet("font-size: 13px; color: #a0a0b0; background: transparent;")
         layout.addWidget(self.info_label)
 
         self.table = QTableWidget()
-        self.table.setColumnCount(5)
+        self.table.setColumnCount(6)
         self.table.setHorizontalHeaderLabels([
-            "Логин", "Роль", "ФИО", "Email", "Пароль"
+            "Логин", "Роль", "ФИО", "Email", "Последний вход", "Статус"
         ])
 
         header_view = self.table.horizontalHeader()
@@ -103,30 +56,21 @@ class UsersWindow(QWidget):
 
         self.add_btn = QPushButton("➕ Добавить пользователя")
         self.add_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #27ae60; color: white; 
-                padding: 8px; border-radius: 4px;
-            }
+            QPushButton { background-color: #27ae60; color: white; padding: 8px; border-radius: 4px; }
             QPushButton:hover { background-color: #2ecc71; }
         """)
         self.add_btn.clicked.connect(self.add_user)
 
         self.edit_btn = QPushButton("✏️ Редактировать")
         self.edit_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #3498db; color: white; 
-                padding: 8px; border-radius: 4px;
-            }
+            QPushButton { background-color: #3498db; color: white; padding: 8px; border-radius: 4px; }
             QPushButton:hover { background-color: #5dade2; }
         """)
         self.edit_btn.clicked.connect(self.edit_user)
 
         self.delete_btn = QPushButton("🗑 Удалить")
         self.delete_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #e74c3c; color: white; 
-                padding: 8px; border-radius: 4px;
-            }
+            QPushButton { background-color: #e74c3c; color: white; padding: 8px; border-radius: 4px; }
             QPushButton:hover { background-color: #ec7063; }
         """)
         self.delete_btn.clicked.connect(self.delete_user)
@@ -141,34 +85,47 @@ class UsersWindow(QWidget):
         self.refresh_table()
 
     def refresh_table(self):
-        """Обновление таблицы пользователей."""
-        self.table.setRowCount(0)
-        self.table.setRowCount(len(self.users))
+        """Обновление таблицы пользователей из БД."""
+        users = self.user_manager.get_all_users()
 
-        for row, user in enumerate(self.users):
+        self.table.setRowCount(0)
+        self.table.setRowCount(len(users))
+
+        for row, user in enumerate(users):
             self.table.setItem(row, 0, QTableWidgetItem(user.get('username', '')))
             self.table.setItem(row, 1, QTableWidgetItem(user.get('role', '').capitalize()))
             self.table.setItem(row, 2, QTableWidgetItem(user.get('full_name', '')))
             self.table.setItem(row, 3, QTableWidgetItem(user.get('email', '')))
-            self.table.setItem(row, 4, QTableWidgetItem("••••••••"))
 
-        self.info_label.setText(f"Всего пользователей: {len(self.users)}")
+            last_login = user.get('last_login')
+            if last_login:
+                self.table.setItem(row, 4, QTableWidgetItem(str(last_login)[:19]))
+            else:
+                self.table.setItem(row, 4, QTableWidgetItem("Никогда"))
+
+            status = "Активен" if user.get('is_active') else "Заблокирован"
+            self.table.setItem(row, 5, QTableWidgetItem(status))
+
+        self.info_label.setText(f"Всего пользователей: {len(users)}")
 
     def add_user(self):
         """Открытие диалога добавления нового пользователя."""
-        dialog = AddUserDialog(self)
+        roles = self.user_manager.get_roles()
+        dialog = AddUserDialog(self, roles=roles)
         if dialog.exec():
             user_data = dialog.get_user_data()
-
-            # Проверка уникальности логина
-            for existing in self.users:
-                if existing.get('username') == user_data['username']:
-                    warning(self, "Ошибка", f"Пользователь с логином '{user_data['username']}' уже существует.")
-                    return
-
-            self.users.append(user_data)
-            self.refresh_table()
-            info(self, "Успех", f"Пользователь '{user_data['username']}' успешно добавлен.")
+            success = self.user_manager.add_user(
+                user_data['username'],
+                user_data['password'],
+                user_data['role'],
+                user_data['full_name'],
+                user_data['email']
+            )
+            if success:
+                self.refresh_table()
+                info(self, "Успех", f"Пользователь '{user_data['username']}' успешно добавлен в БД.")
+            else:
+                warning(self, "Ошибка", f"Пользователь с логином '{user_data['username']}' уже существует.")
 
     def edit_user(self):
         """Редактирование выбранного пользователя."""
@@ -179,14 +136,32 @@ class UsersWindow(QWidget):
             return
 
         row = selected_rows[0].row()
-        user = self.users[row]
+        username = self.table.item(row, 0).text()
 
-        dialog = AddUserDialog(self, edit_mode=True, user_data=user)
+        # Получаем полные данные из БД
+        users = self.user_manager.get_all_users()
+        user = next((u for u in users if u['username'] == username), None)
+
+        if not user:
+            warning(self, "Ошибка", "Не удалось найти пользователя.")
+            return
+
+        roles = self.user_manager.get_roles()
+        dialog = AddUserDialog(self, edit_mode=True, user_data=user, roles=roles)
         if dialog.exec():
-            updated_data = dialog.get_user_data()
-            self.users[row] = updated_data
-            self.refresh_table()
-            info(self, "Успех", "Пользователь успешно обновлён.")
+            updated = dialog.get_user_data()
+            success = self.user_manager.update_user(
+                user['id'],
+                role_name=updated['role'],
+                full_name=updated['full_name'],
+                email=updated['email'],
+                password=updated.get('password') if updated.get('password') else None
+            )
+            if success:
+                self.refresh_table()
+                info(self, "Успех", "Пользователь успешно обновлён в БД.")
+            else:
+                warning(self, "Ошибка", "Не удалось обновить пользователя.")
 
     def delete_user(self):
         """Удаление выбранного пользователя."""
@@ -197,39 +172,44 @@ class UsersWindow(QWidget):
             return
 
         row = selected_rows[0].row()
-        user = self.users[row]
+        username = self.table.item(row, 0).text()
 
-        # Защита от удаления admin
-        if user.get('username') == 'admin':
+        users = self.user_manager.get_all_users()
+        user = next((u for u in users if u['username'] == username), None)
+
+        if not user:
+            return
+
+        if username == 'admin':
             warning(self, "Ошибка", "Нельзя удалить пользователя 'admin'.")
             return
 
         if question(self, "Подтверждение удаления",
                     f"Вы уверены, что хотите удалить пользователя?\n\n"
-                    f"Логин: {user.get('username')}\n"
+                    f"Логин: {username}\n"
                     f"ФИО: {user.get('full_name')}\n\n"
                     f"Это действие нельзя отменить."):
-            self.users.pop(row)
-            self.refresh_table()
-            info(self, "Успех", "Пользователь удалён.")
+            success = self.user_manager.delete_user(user['id'])
+            if success:
+                self.refresh_table()
+                info(self, "Успех", "Пользователь удалён из БД.")
+            else:
+                warning(self, "Ошибка", "Не удалось удалить пользователя.")
 
 
 class AddUserDialog(QDialog):
-    """
-    Диалог добавления/редактирования пользователя.
-    """
+    """Диалог добавления/редактирования пользователя."""
 
-    def __init__(self, parent=None, edit_mode: bool = False, user_data: dict = None):
+    def __init__(self, parent=None, edit_mode: bool = False, user_data: dict = None, roles: list = None):
         """
         Инициализация диалога.
 
-        :param parent: Родительское окно
-        :param edit_mode: Режим редактирования
-        :param user_data: Данные пользователя для редактирования
+        :param roles: Список ролей из БД
         """
         super().__init__(parent)
         self.edit_mode = edit_mode
         self.user_data = user_data or {}
+        self.roles = roles or []
 
         if edit_mode:
             self.setWindowTitle("Редактирование пользователя")
@@ -261,11 +241,13 @@ class AddUserDialog(QDialog):
 
         self.password_input = QLineEdit()
         self.password_input.setEchoMode(QLineEdit.Password)
-        self.password_input.setPlaceholderText("Минимум 8 символов")
+        self.password_input.setPlaceholderText(
+            "Минимум 8 символов" if not self.edit_mode else "Оставьте пустым, чтобы не менять")
         form_layout.addRow("Пароль:", self.password_input)
 
         self.role_combo = QComboBox()
-        self.role_combo.addItems(["admin", "auditor", "user"])
+        for role in self.roles:
+            self.role_combo.addItem(role['name'])
         if self.edit_mode:
             role = self.user_data.get('role', 'user')
             index = self.role_combo.findText(role)
@@ -285,35 +267,17 @@ class AddUserDialog(QDialog):
 
         layout.addLayout(form_layout)
 
-        # Описание прав доступа
-        perms_group = QGroupBox("Права доступа для выбранной роли:")
-        perms_layout = QVBoxLayout()
-        self.perms_label = QLabel()
-        self.perms_label.setStyleSheet("color: #a0a0b0; background: transparent;")
-        perms_layout.addWidget(self.perms_label)
-        perms_group.setLayout(perms_layout)
-        layout.addWidget(perms_group)
-
-        self.role_combo.currentTextChanged.connect(self.update_permissions_display)
-        self.update_permissions_display()
-
         btn_layout = QHBoxLayout()
         save_btn = QPushButton("💾 Сохранить")
         save_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #27ae60; color: white; 
-                padding: 8px; border-radius: 4px;
-            }
+            QPushButton { background-color: #27ae60; color: white; padding: 8px; border-radius: 4px; }
             QPushButton:hover { background-color: #2ecc71; }
         """)
         save_btn.clicked.connect(self.validate_and_accept)
 
         cancel_btn = QPushButton("✖ Отмена")
         cancel_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #7f8c8d; color: white; 
-                padding: 8px; border-radius: 4px;
-            }
+            QPushButton { background-color: #7f8c8d; color: white; padding: 8px; border-radius: 4px; }
             QPushButton:hover { background-color: #95a5a6; }
         """)
         cancel_btn.clicked.connect(self.reject)
@@ -323,31 +287,6 @@ class AddUserDialog(QDialog):
         layout.addLayout(btn_layout)
 
         self.setLayout(layout)
-
-    def update_permissions_display(self):
-        """Обновление отображения прав доступа для выбранной роли."""
-        role = self.role_combo.currentText()
-        perms = ROLE_PERMISSIONS.get(role, {})
-
-        perm_names = {
-            'dashboard': 'Дашборд',
-            'scan': 'Новое сканирование',
-            'results': 'Результаты',
-            'assets': 'Активы',
-            'reports': 'Отчёты',
-            'vulnerabilities': 'Уязвимости',
-            'settings': 'Настройки',
-            'users': 'Управление пользователями'
-        }
-
-        text = "Доступные вкладки:\n"
-        for perm_key, perm_name in perm_names.items():
-            if perms.get(perm_key, False):
-                text += f"✓ {perm_name}\n"
-            else:
-                text += f"✗ {perm_name}\n"
-
-        self.perms_label.setText(text)
 
     def validate_and_accept(self):
         """Валидация данных перед сохранением."""
@@ -377,8 +316,7 @@ class AddUserDialog(QDialog):
         """Получение данных пользователя."""
         return {
             'username': self.username_input.text().strip(),
-            'password': self.password_input.text() if self.password_input.text() else self.user_data.get('password',
-                                                                                                         ''),
+            'password': self.password_input.text(),
             'role': self.role_combo.currentText(),
             'full_name': self.fullname_input.text().strip(),
             'email': self.email_input.text().strip()

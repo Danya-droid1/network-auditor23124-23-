@@ -1,9 +1,7 @@
 # -*- coding: utf-8 -*-
-"""
-Окно авторизации пользователя.
-Проверяет учётные данные и открывает главное окно.
-Автор: Голуб Д.Н., группа о.ИЗДтс 23.1/Б4-23
-"""
+# Окно авторизации пользователя.
+# Проверяет учётные данные через UserManager и БД.
+# Автор: Голуб Д.Н., группа о.ИЗДтс 23.1/Б4-23
 
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout,
                                QLabel, QLineEdit, QPushButton)
@@ -13,44 +11,19 @@ from src.utils.dialogs import warning
 
 
 class LoginWindow(QMainWindow):
-    """
-    Окно входа в систему Network Auditor.
-    """
+    """Окно входа в систему Network Auditor."""
 
-    def __init__(self):
-        """Инициализация окна авторизации."""
+    def __init__(self, user_manager):
+        """
+        Инициализация окна авторизации.
+
+        :param user_manager: Экземпляр UserManager для работы с БД
+        """
         super().__init__()
+        self.user_manager = user_manager
         self.setWindowTitle("Network Auditor — Вход в систему")
         self.resize(400, 300)
         self.init_ui()
-
-        # Тестовые учётные данные
-        self.test_users = {
-            "admin": {
-                "password": "AdminSecure2026!",
-                "role": "admin",
-                "full_name": "Администратор ИБ",
-                "email": "admin@muiv.ru"
-            },
-            "analyst": {
-                "password": "AnalystSecure2026!",
-                "role": "auditor",
-                "full_name": "Аналитик ИБ",
-                "email": "analyst@muiv.ru"
-            },
-            "auditor": {
-                "password": "AuditorSecure2026!",
-                "role": "auditor",
-                "full_name": "Аудитор",
-                "email": "auditor@muiv.ru"
-            },
-            "user": {
-                "password": "UserSecure2026!",
-                "role": "user",
-                "full_name": "Пользователь",
-                "email": "user@muiv.ru"
-            }
-        }
 
     def init_ui(self):
         """Инициализация пользовательского интерфейса."""
@@ -70,12 +43,14 @@ class LoginWindow(QMainWindow):
         layout.addWidget(QLabel("Логин:"))
         self.username_input = QLineEdit()
         self.username_input.setPlaceholderText("Введите логин")
+        self.username_input.returnPressed.connect(self.authenticate)
         layout.addWidget(self.username_input)
 
         layout.addWidget(QLabel("Пароль:"))
         self.password_input = QLineEdit()
         self.password_input.setEchoMode(QLineEdit.Password)
         self.password_input.setPlaceholderText("Введите пароль")
+        self.password_input.returnPressed.connect(self.authenticate)
         layout.addWidget(self.password_input)
 
         layout.addSpacing(10)
@@ -94,17 +69,18 @@ class LoginWindow(QMainWindow):
         central_widget.setLayout(layout)
 
     def authenticate(self):
-        """Проверка введённых учётных данных."""
+        """Проверка учётных данных через БД."""
         username = self.username_input.text().strip()
         password = self.password_input.text()
 
-        if username in self.test_users and self.test_users[username]["password"] == password:
-            user_data = {
-                "username": username,
-                "role": self.test_users[username]["role"],
-                "full_name": self.test_users[username]["full_name"],
-                "email": self.test_users[username].get("email", "")
-            }
+        if not username or not password:
+            warning(self, "Ошибка", "Пожалуйста, введите логин и пароль.")
+            return
+
+        # Аутентификация через UserManager
+        user_data = self.user_manager.authenticate(username, password)
+
+        if user_data:
             self.open_main_window(user_data)
         else:
             warning(self, "Ошибка", "Неверный логин или пароль")
@@ -112,6 +88,7 @@ class LoginWindow(QMainWindow):
     def open_main_window(self, user_data: dict):
         """Открытие главного окна после успешной авторизации."""
         from src.gui.main_window import MainWindow
-        self.main_window = MainWindow(user_data)
+        # Передаём user_manager и user_data
+        self.main_window = MainWindow(user_data, self.user_manager)
         self.main_window.show()
         self.close()
